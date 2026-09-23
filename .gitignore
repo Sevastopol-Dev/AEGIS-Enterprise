@@ -1,0 +1,36 @@
+# Terraform local state and overrides
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform runtime directory
+.terraform/
+.terraform.lock.hcl
+
+# Python / Lambda artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+*.zip
+
+# Environment files & LocalStack state
+.env
+.localstack/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local Volume Cache & Temporary Keys (From your directory)
+volume/
+volume/cache/
+volume/logs/
+volume/tmp/

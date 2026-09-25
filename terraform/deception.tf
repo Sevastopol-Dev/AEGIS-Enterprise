@@ -20,7 +20,7 @@ resource "aws_iam_access_key" "honeytoken_key" {
 # 2. Planted Decoy S3 Bucket Target
 #tfsec:ignore:AWS-0132 
 resource "aws_s3_bucket" "decoy_bucket" {
-  bucket        = "pnc-customer-ssn-ledger-backup-prod"
+  bucket        = "corp-customer-ssn-ledger-backup-prod"
   force_destroy = true
 }
 

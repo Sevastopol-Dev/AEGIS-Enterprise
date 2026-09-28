@@ -66,7 +66,7 @@ resource "aws_iam_policy" "lambda_immune_policy" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "*"
+        Resource = "arn:aws:logs:*:*:log-group:/aws/lambda/aegis-v4-immune-worker:*"
       }
     ]
   })

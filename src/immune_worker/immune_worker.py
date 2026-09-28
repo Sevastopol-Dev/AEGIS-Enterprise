@@ -1,83 +1,76 @@
-import os
-import time
-import json
-import logging
-import boto3
+import os, time, json, logging, boto3
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-iam_client = boto3.client('iam')
-dynamodb_client = boto3.client('dynamodb')
-
+iam, dynamodb = boto3.client('iam'), boto3.client('dynamodb')
 DYNAMODB_TABLE = os.environ.get('DYNAMODB_TABLE', 'aegis-v4-circuit-breaker-state')
 
-PROTECTED_IDENTITIES = {
-    "aegis-production-ecs-task-role",
-    "AWSServiceRoleForECS",
-    "AWSReservedSSO_AdministratorAccess",
-    "aegis-immune-worker-execution-role"
+PROTECTED = {
+    "aegis-production-ecs-task-role", "AWSServiceRoleForECS",
+    "AWSReservedSSO_AdministratorAccess", "aegis-immune-worker-execution-role"
 }
 
-MAX_REMEDIATIONS_PER_MINUTE = 5
-
 def check_circuit_breaker() -> bool:
-    """DynamoDB Leaky Bucket Rate Limiter."""
-    current_minute = str(int(time.time() // 60))
-    metric_key = f"RATE_LIMIT#{current_minute}"
-    ttl_timestamp = int(time.time()) + 300
-
+    metric_key = f"RATE_LIMIT#{int(time.time() // 60)}"
     try:
-        response = dynamodb_client.update_item(
+        res = dynamodb.update_item(
             TableName=DYNAMODB_TABLE,
             Key={'MetricName': {'S': metric_key}},
             UpdateExpression="ADD ExecutionCount :inc SET #ttl = if_not_exists(#ttl, :ttl)",
             ExpressionAttributeNames={'#ttl': 'ttl'},
-            ExpressionAttributeValues={':inc': {'N': '1'}, ':ttl': {'N': str(ttl_timestamp)}},
+            ExpressionAttributeValues={':inc': {'N': '1'}, ':ttl': {'N': str(int(time.time()) + 300)}},
             ReturnValues="UPDATED_NEW"
         )
-        count = int(response['Attributes']['ExecutionCount']['N'])
-        if count > MAX_REMEDIATIONS_PER_MINUTE:
-            logger.critical("⛔ CIRCUIT BREAKER TRIPPED! Threshold exceeded. Switching to PASSIVE MODE.")
+        if int(res['Attributes']['ExecutionCount']['N']) > 5:
+            logger.critical("⛔ CIRCUIT BREAKER TRIPPED!")
             return False
         return True
     except ClientError as e:
-        logger.error(f"DynamoDB Circuit Breaker error: {str(e)}")
-        return True  # Fail-open for safety
+        logger.error(f"DynamoDB error: {e}")
+        return True
 
 def lambda_handler(event, context):
-    logger.info(f"Received Security Event: {event}")
+    logger.info(f"Event: {event}")
+    identity = event.get('detail', {}).get('userIdentity', {})
+    is_role = identity.get('type') == "AssumedRole"
+    
+    # Extract principal name
+    arn = identity.get('arn', '')
+    if is_role and 'assumed-role' in arn:
+        name = arn.split('/')[-2]
+    else:
+        name = identity.get('userName') or identity.get('principalId', 'UNKNOWN').split(':')[-1]
 
-    # Extract target IAM principal name
-    detail = event.get('detail', {})
-    user_identity = detail.get('userIdentity', {})
-    user_name = user_identity.get('userName') or user_identity.get('principalId', 'UNKNOWN').split(':')[-1]
-
-    logger.warning(f"🚨 HONEYTOKEN TRIPWIRE TRIGGERED BY: {user_name}")
-
-    # Interlock 1: Protected Identity Check
-    if user_name in PROTECTED_IDENTITIES:
-        logger.critical(f"⛔ SAFETY INTERLOCK: Action aborted on PROTECTED identity '{user_name}'.")
+    if name in PROTECTED:
+        logger.critical(f"⛔ SAFETY INTERLOCK: Protected identity '{name}'")
         return {"status": "ABORTED", "reason": "Protected identity"}
 
-    # Interlock 2: Rate Limit Check
     if not check_circuit_breaker():
-        return {"status": "HALTED", "reason": "Circuit breaker rate limit exceeded"}
+        return {"status": "HALTED", "reason": "Circuit breaker limit reached"}
 
-    # Attach Explicit Deny Quarantine Policy
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Policy document (includes session revocation if it's a role)
+    statements = [{"Sid": "AegisDeny", "Effect": "Deny", "Action": "*", "Resource": "*"}]
+    if is_role:
+        statements.append({
+            "Sid": "AegisRevokeSTS", "Effect": "Deny", "Action": "*", "Resource": "*",
+            "Condition": {"DateLessThan": {"aws:TokenIssueTime": now}}
+        })
+    
+    policy_doc = json.dumps({"Version": "2012-10-17", "Statement": statements})
+
     try:
-        iam_client.put_user_policy(
-            UserName=user_name,
-            PolicyName="AegisQuarantinePolicy",
-            PolicyDocument=json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{"Sid": "AegisInstantQuarantine", "Effect": "Deny", "Action": "*", "Resource": "*"}]
-            })
-        )
-        logger.info(f"✅ SUCCESSFULLY QUARANTINED: {user_name}")
-        return {"status": "SUCCESS", "isolated_principal": user_name}
-
+        if is_role:
+            iam.put_role_policy(RoleName=name, PolicyName="AegisQuarantinePolicy", PolicyDocument=policy_doc)
+        else:
+            iam.put_user_policy(UserName=name, PolicyName="AegisQuarantinePolicy", PolicyDocument=policy_doc)
+            
+        logger.info(f"✅ QUARANTINED: {name} (Role: {is_role})")
+        return {"status": "SUCCESS", "isolated": name}
     except ClientError as e:
-        logger.error(f"Failed to isolate principal {user_name}: {str(e)}")
+        logger.error(f"Failed to isolate {name}: {e}")
         raise e

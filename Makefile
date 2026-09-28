@@ -4,6 +4,13 @@
 
 .PHONY: all setup build up down init plan apply test clean
 
+# Configuration
+VENV = .venv
+PYTHON = $(VENV)/bin/python
+PIP = $(VENV)/bin/pip
+AWS_ENDPOINT_URL ?= http://localhost:4566
+TERRAFORM_DIR = terraform
+
 # Default target
 all: setup build up init apply test
 
@@ -14,6 +21,14 @@ setup:
 	@command -v tflocal >/dev/null 2>&1 || { echo "tflocal is required. Install via 'pip install terraform-local'. Aborting."; exit 1; }
 	@command -v awslocal >/dev/null 2>&1 || { echo "awslocal is required. Install via 'pip install awscli-local'. Aborting."; exit 1; }
 	@echo "All prerequisite CLI tools found."
+	
+$(VENV)/bin/activate:
+	@echo "Setting up virtual environment..."
+	@python3 -m venv $(VENV)
+	@$(PIP) install --upgrade pip
+	@$(PIP) install boto3
+
+venv: $(VENV)/bin/activate ## Ensure virtual environment exists and dependencies are installed
 
 # 2. Package Python Immune Worker into Deployment Zip
 build:
@@ -59,12 +74,18 @@ test:
 	@echo "Executing Aegis v4 Honeytoken Breach & Auto-Remediation Test..."
 	@chmod +x tests/trigger_honeytoken.sh
 	@./tests/trigger_honeytoken.sh
+	
 
+audit: venv ## Run security baseline audit (auto-creates venv & installs boto3 if missing)
+	@echo "Running security audit..."
+	@AWS_ENDPOINT_URL=$(AWS_ENDPOINT_URL) $(PYTHON) src/compliance_audit/audit.py
+	
 # 6. Clean Artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -f terraform/immune_worker.zip
 	@rm -rf terraform/.terraform terraform/.terraform.lock.hcl terraform/terraform.tfstate*
+	@rm -rf $(VENV)
 	@echo "Cleanup complete."
 	
 # 7. Trivy Static Analysis	

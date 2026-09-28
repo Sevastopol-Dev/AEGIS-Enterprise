@@ -64,6 +64,28 @@ resource "aws_internet_gateway" "igw" {
   tags   = { Name = "aegis-igw" }
 }
 
+# 3.1 Elastic IP for NAT Gateway
+resource "aws_eip" "nat_eip" {
+  domain     = "vpc"
+  depends_on = [ aws_internet_gateway.igw ]
+  
+  tags = {
+    Name = "aegis-nat-eip"
+   }
+  }
+
+# 3.2 NAT Gateway (Public Subnet A)
+resource "aws_nat_gateway" "nat_gw" {
+  allocation_id = aws_eip.nat_eip.id
+  subnet_id     = aws_subnet.public_subnet.id
+  
+  tags = {
+    Name = "aegis-nat-gw"
+  }
+
+  depends_on = [ aws_internet_gateway.igw ]
+}
+
 # 4. Route Tables
 resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.aegis_vpc.id
@@ -83,6 +105,12 @@ resource "aws_route_table_association" "public_assoc" {
 
 resource "aws_route_table" "private_rt" {
   vpc_id = aws_vpc.aegis_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gw.id
+  }
+  
   tags   = { Name = "aegis-private-rt" }
 }
 

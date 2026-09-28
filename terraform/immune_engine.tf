@@ -46,7 +46,9 @@ resource "aws_iam_policy" "lambda_immune_policy" {
           "iam:PutUserPolicy",
           "iam:PutRolePolicy",
           "iam:AttachUserPolicy",
-          "iam:AttachRolePolicy"
+          "iam:AttachRolePolicy",
+          "iam:GetUser",
+          "iam:GetRole"
         ]
         Resource = "*"
       },

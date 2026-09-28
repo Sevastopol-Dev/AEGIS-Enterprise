@@ -32,7 +32,7 @@ Aegis-v4 Hardened Cloud Infrastructure
 ├── PHASE 3: SERVERLESS DECEPTION LABYRINTH (Active Lure Layer)
 │   ├── Decoy IAM User (bank-core-ledger-svc-admin)
 │   ├── Honeytoken Access Key (aws_iam_access_key.honeytoken_key)
-│   └── Decoy S3 Bucket (pnc-customer-ssn-ledger-backup-prod)
+│   └── Decoy S3 Bucket (corp-customer-ssn-ledger-backup-prod)
 │
 └── PHASE 4: EVENT-DRIVEN IMMUNE ENGINE (Automated Neutralization)
     ├── DynamoDB Table (aegis-v4-circuit-breaker-state) -> Rate-limiting circuit breaker
@@ -79,7 +79,7 @@ Aegis-v4 Hardened Cloud Infrastructure
 * **Honeytoken Identity:** Plants a decoy IAM user (`bank-core-ledger-svc-admin`) with no attached policies. Any attempt to use its access key triggers an immediate security tripwire.
 
 
-* **Decoy Target:** Provisions an unadvertised decoy S3 bucket (`pnc-customer-ssn-ledger-backup-prod`) with `tfsec` static analysis suppressions to act as a honeypot target.
+* **Decoy Target:** Provisions an unadvertised decoy S3 bucket (`corp-customer-ssn-ledger-backup-prod`) with `tfsec` static analysis suppressions to act as a honeypot target.
 
 
 

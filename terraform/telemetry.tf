@@ -1,5 +1,11 @@
 #Phase 2: Immutable Audit & Telemetry Engine
 
+variable "enable_cloudtrail" {
+  type        = bool
+  default     = false
+  description = "Toggle CloudTrail deployment. Set to false for LocalStack Community testing."
+}
+
 # 1. KMS Encryption Key for Audit Storage
 resource "aws_kms_key" "audit_kms" {
   description             = "KMS Key for Aegis Immutable Audit Logs"
@@ -55,42 +61,42 @@ resource "aws_s3_bucket_public_access_block" "audit_block_public" {
   restrict_public_buckets = true
 }
 
-# CloudTrail Resources commented out to avoid deployment errors against LocalStack (Free Tier)
-
 # 3. AWS CloudTrail for Organization-Wide API Capture
-#resource "aws_cloudtrail" "aegis_trail" {
-#name                          = "aegis-v4-event-trail"
-#s3_bucket_name                = aws_s3_bucket.audit_bucket.id
-#kms_key_id                    = aws_kms_key.audit_kms.arn
-#include_global_service_events = true
-#is_multi_region_trail         = true
-#enable_logging                = true
+resource "aws_cloudtrail" "aegis_trail" {
+  count                         = var.enable_cloudtrail ? 1 : 0
+  name                          = "aegis-v4-event-trail"
+  s3_bucket_name                = aws_s3_bucket.audit_bucket.id
+  kms_key_id                    = aws_kms_key.audit_kms.arn
+  include_global_service_events = true
+  is_multi_region_trail         = true
+  enable_logging                = true
 
-#depends_on = [aws_s3_bucket_policy.allow_cloudtrail_logging]
-#}
+  depends_on = [aws_s3_bucket_policy.allow_cloudtrail_logging[0]]
+}
 
-#resource "aws_s3_bucket_policy" "allow_cloudtrail_logging" {
-#bucket = aws_s3_bucket.audit_bucket.id
-#policy = jsonencode({
-#Version = "2012-10-17"
-#Statement = [
-#{
-#Sid       = "AWSCloudTrailAclCheck"
-#Effect    = "Allow"
-#Principal = { Service = "cloudtrail.amazonaws.com" }
-#Action    = "s3:GetBucketAcl"
-# Resource  = aws_s3_bucket.audit_bucket.arn
-#},
-#{
-#Sid       = "AWSCloudTrailWrite"
-#Effect    = "Allow"
-#Principal = { Service = "cloudtrail.amazonaws.com" }
-#Action    = "s3:PutObject"
-#Resource  = "${aws_s3_bucket.audit_bucket.arn}/AWSLogs/*"
-#Condition = {
-# StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
-# }
-# }
-#]
-#})
-#}
+resource "aws_s3_bucket_policy" "allow_cloudtrail_logging" {
+  count  = var.enable_cloudtrail ? 1 : 0
+  bucket = aws_s3_bucket.audit_bucket.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AWSCloudTrailAclCheck"
+        Effect    = "Allow"
+        Principal = { Service = "cloudtrail.amazonaws.com" }
+        Action    = "s3:GetBucketAcl"
+        Resource  = aws_s3_bucket.audit_bucket.arn
+      },
+      {
+        Sid       = "AWSCloudTrailWrite"
+        Effect    = "Allow"
+        Principal = { Service = "cloudtrail.amazonaws.com" }
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.audit_bucket.arn}/AWSLogs/*"
+        Condition = {
+          StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
+        }
+      }
+    ]
+  })
+}
